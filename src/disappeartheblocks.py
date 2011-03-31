@@ -1,90 +1,16 @@
 import pyglet
 from random import randint
-from copy import deepcopy
 from functools import wraps
+
+from pieces import Piece, pieces
 
 GRID_WIDTH = 10
 GRID_HEIGHT = 22
 GRID_HIDDEN_ROWS = 2
 
-# define the DisappearTheBlocks pieces
-# spaces are interpreted as empty areas,
-# any other character as a solid tile of 
-# the piece
-pieces = [{'color': (255,0,0),
-            'shape': ['|',
-                      '|',
-                      '|',
-                      '|']},
-          {'color': (0,255,0),
-           'shape': [' __',
-                     '_| ']},
-          {'color': (0,0,255),
-           'shape': ['__ ',
-                     ' |_']},
-          {'color': (255,255,0),
-           'shape': [' |',
-                     ' |',
-                     '_|']},
-          {'color': (255,0,255),
-           'shape': ['| ',
-                     '| ',
-                     '|_']},
-          {'color': (0,255,255),
-           'shape': ['__',
-                     '__']},
-          {'color': (64, 100, 135),
-           'shape': [' | ',
-                     '___']}]
-
-def normalize_pieces(pieces):
-    """
-    Creates a copy of `pieces`, then normalizes the shape.
-    For each piece:
-    - Empty tiles (represented by spaces) are normalized as -1.
-    - Tiles where the piece is solid are set to the value of
-     their index in `pieces`
-    """
-    p_norm = deepcopy(pieces)
-    for idx, piece in enumerate(p_norm):
-        piece['shape'] = [[c == ' ' and -1 or idx for c in row]
-                          for row in piece['shape']]
-    return p_norm
-
-pieces = normalize_pieces(pieces)
-
-class Piece(object):
-    """
-    Pieces are represented by their lower-left (x,y) coordinate in grid-space
-    and their shape (see the defintion of pieces)
-    """
-    def __init__(self, x, y, index):
-        self.x, self.y = (x,y)
-        self.index = index
-        self.shape = pieces[index]['shape']
-
-    def rotate(self, direction):
-        """
-        Rotates the piece
-        direction = 1 indicates counterclockwise rotation,
-        direction = -1 is clockwisex
-        """
-        # one liner to compute the transpose of a matrix... not
-        # efficient for larger sized matrices but for these small ones
-        # it's fine
-        self.shape = zip(*self.shape[::-1*direction])
-
-    def get_coords(self):
-        coords = []
-        height = len(self.shape)
-        for (i, row) in enumerate(self.shape):
-            for (j, value) in enumerate(row):
-                if value != -1:
-                    coords.append((self.x + j, self.y + height - 1 - i))
-        return coords
-
-    def __repr__(self):
-        return "(%d, %d): %s" % (self.x, self.y, str(self.shape))
+MOVE_LEFT_KEY = pyglet.window.key.LEFT
+MOVE_RIGHT_KEY = pyglet.window.key.RIGHT
+ROTATE_CW_KEY = pyglet.window.key.UP
 
 def random_piece():
     index = randint(0, len(pieces) - 1)
@@ -102,7 +28,8 @@ def capture_delta(fn):
     Defines a decorator for use in the DisappearTheBlocks class
     The game state is saved before calling the wrapped function,
     and compared with the state after calling the wrapped function.
-    The differences are added to the delta list
+    The differences are added to the delta list, used in rendering
+    the game
     """
     @wraps(fn)
     def wrapper(self, *args, **kwargs):
@@ -116,30 +43,42 @@ def capture_delta(fn):
         return ret
     return wrapper
 
-
 class DisappearTheBlocks(object):
     """
     Implements a game of te... DisappearTheBlocks
     """
     delta = []
-
-    def __init__(self):
-        self.grid = []
+    blocks = {}
 
     def start(self):
         self.current_piece = random_piece()
         self.delta.extend(zip(self.current_piece.get_coords(),
                               yield_i(self.current_piece.index)))
         pyglet.clock.schedule_interval(self.tick, 0.5)
-        pyglet.clock.schedule_interval(self.rotate_piece, 1)
-    
-    @capture_delta
-    def tick(self, dt):
-        self.current_piece.y -= 1
 
     @capture_delta
-    def rotate_piece(self, dt):
-        self.current_piece.rotate(1)
+    def tick(self, dt):
+        # check for collision with other pieces or bottom
+        # maybe if time since last action > some amount, don't freeze
+
+        # at this point we can freely fall
+        self.current_piece.y -= 1
+    
+    @capture_delta
+    def move_piece(self, direction):
+        if direction > 0 and \
+                self.current_piece.x + len(self.current_piece.shape[0]) < GRID_WIDTH:
+            self.current_piece.x += 1
+        elif direction < 0 and self.current_piece.x > 0:
+            self.current_piece.x -= 1
+
+    @capture_delta
+    def rotate_piece(self, direction):
+        self.current_piece.rotate(direction)
+
+    @capture_delta
+    def drop_piece(self, dt):
+        pass
 
     def pop_delta(self):
         d = self.delta
@@ -156,24 +95,28 @@ class DisappearTheBlocksView(object):
     """
     """
     def __init__(self, x, y, block_img):
+        width = block_img.width
+        self.bb_coords = (x, y,
+                          x + width*GRID_WIDTH, y,
+                          x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
+                          x, y + width*GRID_WIDTH)
+
         self.batch = pyglet.graphics.Batch()
 
-        # Helper function for initializing the sprites
-        def make_sprite(j, i):
-            s = pyglet.sprite.Sprite(block_img,
-                                     batch=self.batch,
-                                     x=x + j*block_img.width,
-                                     y=y + i*block_img.width)
-            s.visible = False
-            return s
-
-        self.grid = [[make_sprite(j,i)
-                      for j in range(GRID_WIDTH)]
-                     for i in range(GRID_HEIGHT)]
+        self.block_grid = {}
+        for i in range(GRID_WIDTH):
+            for j in range(GRID_HEIGHT):
+                self.block_grid[(i,j)] = pyglet.sprite.Sprite(block_img,
+                                                              batch=self.batch,
+                                                              x=x + i*width,
+                                                              y=y + j*width)
+                self.block_grid[(i,j)].visible = False
 
     def update(self, delta):
-        for ((x, y), index) in delta:
-            sprite = self.grid[y][x]
+        for (pos, index) in delta:
+            if pos[1] >= GRID_HEIGHT-2:
+                continue
+            sprite = self.block_grid[pos]
             if index == -1:
                 sprite.visible = False
             else:
@@ -181,20 +124,40 @@ class DisappearTheBlocksView(object):
                 sprite.color = pieces[index]['color']
 
     def draw(self):
+        pyglet.gl.glColor3f(1.0, 1.0, 1.0)
+        pyglet.graphics.draw(4, pyglet.gl.GL_LINE_LOOP,
+                             ('v2i', self.bb_coords))
         self.batch.draw()
+
+
+class DisappearTheBlocksKeyboardController(object):
+
+    def __init__(self, move_fn, rotate_fn, drop_fn):
+        self.mapping = {MOVE_LEFT_KEY: lambda: move_fn(-1),
+                        MOVE_RIGHT_KEY: lambda:move_fn(1),
+                        ROTATE_CW_KEY: lambda: rotate_fn(1)}
+
+    def on_key_press(self, symbol, modifiers):
+        if symbol in self.mapping:
+            self.mapping[symbol]()
 
 if __name__ == '__main__':
     window = pyglet.window.Window(800, 600)
-    img = pyglet.resource.image('block.png')
+    img = pyglet.image.load('block.png')
+    print 'loaded'
     game = DisappearTheBlocks()
     view = DisappearTheBlocksView(400-125, 20, img)
+    controller = DisappearTheBlocksKeyboardController(game.move_piece,
+                                                      game.rotate_piece,
+                                                      game.drop_piece)
 
     @window.event
     def on_draw():
-        global game
         window.clear()
         view.update(game.pop_delta())
         view.draw()
 
+    window.push_handlers(controller)
     game.start()
+    print "running"
     pyglet.app.run()
