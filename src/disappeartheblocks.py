@@ -33,11 +33,16 @@ def capture_delta(fn):
     """
     @wraps(fn)
     def wrapper(self, *args, **kwargs):
-        current_coords = set(self.current_piece.get_coords())
+        piece = set(self.current_piece.get_coords())
+        old_state = piece.union(set(self.blocks.keys()))
+
         ret = fn(self, *args, **kwargs)
-        new_coords = set(self.current_piece.get_coords())
-        now_empty = current_coords.difference(new_coords)
-        new_blocks = new_coords.difference(current_coords)
+
+        piece = set(self.current_piece.get_coords())
+        new_state = piece.union(set(self.blocks.keys()))
+        now_empty = old_state.difference(new_state)
+        new_blocks = new_state.difference(old_state)
+
         self.delta.extend(zip(now_empty, yield_i(-1)))
         self.delta.extend(zip(new_blocks, yield_i(self.current_piece.index)))
         return ret
@@ -49,6 +54,7 @@ class DisappearTheBlocks(object):
     """
     delta = []
     blocks = {}
+    last_action = 0
 
     def start(self):
         self.current_piece = random_piece()
@@ -56,16 +62,34 @@ class DisappearTheBlocks(object):
                               yield_i(self.current_piece.index)))
         pyglet.clock.schedule_interval(self.tick, 0.5)
 
+    def valid(self):
+        if self.current_piece.y < 0 or self.current_piece.x < 0 \
+                or (self.current_piece.x + self.current_piece.width > GRID_WIDTH):
+            print self.current_piece.width
+            return False
+        
+        return not (set(self.current_piece.get_coords()) and \
+            set(self.blocks.keys()))
+
+    def finish_fall(self):
+        print self.current_piece.get_coords()
+        self.blocks.update(zip(self.current_piece.get_coords(),
+                               yield_i(self.current_piece.index)))
+        self.current_piece = random_piece()
+
     @capture_delta
     def tick(self, dt):
-        # check for collision with other pieces or bottom
-        # maybe if time since last action > some amount, don't freeze
-
-        # at this point we can freely fall
+        now = pyglet.clock.get_default().time()
         self.current_piece.y -= 1
-    
+        if not self.valid():
+            self.current_piece.y += 1
+            if now - self.last_action > 1:
+                self.finish_fall()
+            return
+
     @capture_delta
     def move_piece(self, direction):
+        self.last_action = pyglet.clock.get_default().time()
         if direction > 0 and \
                 self.current_piece.x + len(self.current_piece.shape[0]) < GRID_WIDTH:
             self.current_piece.x += 1
@@ -74,32 +98,35 @@ class DisappearTheBlocks(object):
 
     @capture_delta
     def rotate_piece(self, direction):
+        self.last_action = pyglet.clock.get_default().time()
         self.current_piece.rotate(direction)
+        if not self.valid():
+            self.current_piece.rotate(-direction)
 
     @capture_delta
-    def drop_piece(self, dt):
-        pass
+    def drop_piece(self):
+        while self.valid():
+            self.current_piece.y -= 1
+        self.current_piece.y += 1
+        self.finish_fall()
 
     def pop_delta(self):
         d = self.delta
         self.delta = []
         return d
 
-    def churn_piece(self):
-        # merge current piece with grid
-        # set current piece to piece in queue
-        # create a new queued piece
-        pass
+    def _wiggle(self):
+        return True
 
 class DisappearTheBlocksView(object):
     """
     """
     def __init__(self, x, y, block_img):
         width = block_img.width
-        self.bb_coords = (x, y,
-                          x + width*GRID_WIDTH, y,
+        self.bb_coords = (x-1, y-1,
+                          x + width*GRID_WIDTH, y-1,
                           x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
-                          x, y + width*GRID_WIDTH)
+                          x-1, y + width*GRID_HEIGHT)
 
         self.batch = pyglet.graphics.Batch()
 

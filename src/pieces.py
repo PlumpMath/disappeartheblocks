@@ -55,6 +55,7 @@ class Piece(object):
         self.x, self.y = (x,y)
         self.index = index
         self.shape = pieces[index]['shape']
+        self.width = len(self.shape[0])
 
     def rotate(self, direction):
         """
@@ -66,6 +67,7 @@ class Piece(object):
         # efficient for larger sized matrices but for these small ones
         # it's fine
         self.shape = zip(*self.shape[::-1*direction])
+        self.width = len(self.shape[0])
 
     def get_coords(self):
         coords = []
