@@ -5,10 +5,10 @@ from copy import deepcopy
 # any other character as a solid tile of 
 # the piece
 pieces = [{'color': (255,0,0),
-            'shape': ['|',
-                      '|',
-                      '|',
-                      '|']},
+           'shape': ['|',
+                     '|',
+                     '|',
+                     '|']},
           {'color': (0,255,0),
            'shape': [' __',
                      '_| ']},

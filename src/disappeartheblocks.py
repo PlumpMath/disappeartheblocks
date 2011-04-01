@@ -8,7 +8,6 @@ from pieces import Piece, pieces
 
 GRID_WIDTH = 10
 GRID_HEIGHT = 22
-GRID_HIDDEN_ROWS = 2
 # don't let a piece freeze until this many seconds have
 # passed after taking an action
 FREEZE_DELAY = 0.3 
@@ -22,7 +21,7 @@ def random_piece():
     index = randint(0, len(pieces) - 1)
     shape = pieces[index]['shape']
     x = GRID_WIDTH//2 - len(shape[0])//2
-    y = GRID_HEIGHT - len(shape)
+    y = GRID_HEIGHT + 1
     return Piece(x, y, index)
 
 class DisappearTheBlocks(object):
@@ -51,6 +50,8 @@ class DisappearTheBlocks(object):
 
     def start(self):
         pyglet.clock.schedule_interval(self.tick, 0.2)
+    def end(self):
+        pyglet.clock.unschedule(self.tick)
 
     def valid(self):
         """
@@ -66,6 +67,8 @@ class DisappearTheBlocks(object):
         self.blocks.update(self.current_piece.blocks)
         self.make_consistent()
         self.current_piece = random_piece()
+        if not self.valid():
+            game.end()
 
     def make_consistent(self):
         # keys are (x,y) coordinates, so we sort by the y coordinate,
@@ -150,8 +153,8 @@ class DisappearTheBlocksView(object):
 
         self.bb_coords = (x-1, y-1,
                           x + width*GRID_WIDTH, y-1,
-                          x + width*GRID_WIDTH, y + width*(GRID_HEIGHT-GRID_HIDDEN_ROWS),
-                          x-1, y + width*(GRID_HEIGHT-GRID_HIDDEN_ROWS))
+                          x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
+                          x-1, y + width*GRID_HEIGHT)
 
         self.block_grid = {}
         for i in range(GRID_WIDTH):
@@ -176,7 +179,8 @@ class DisappearTheBlocksView(object):
         delta.extend(zip(now_empty, repeat(-1)))
         delta.extend( ((pos, state[pos]) for pos in new_blocks) )
         for (pos, index) in delta:
-            if pos[1] >= GRID_HEIGHT-GRID_HIDDEN_ROWS:
+            # pieces can be outside the viewable area, so check for this
+            if pos[1] >= GRID_HEIGHT:
                 continue
             sprite = self.block_grid[pos]
             if index == -1:
