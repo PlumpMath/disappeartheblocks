@@ -9,6 +9,9 @@ from pieces import Piece, pieces
 GRID_WIDTH = 10
 GRID_HEIGHT = 22
 GRID_HIDDEN_ROWS = 2
+# don't let a piece freeze until this many seconds have
+# passed after taking an action
+FREEZE_DELAY = 0.3 
 
 MOVE_LEFT_KEY = pyglet.window.key.LEFT
 MOVE_RIGHT_KEY = pyglet.window.key.RIGHT
@@ -47,7 +50,7 @@ class DisappearTheBlocks(object):
         return d
 
     def start(self):
-        pyglet.clock.schedule_interval(self.tick, 0.05)
+        pyglet.clock.schedule_interval(self.tick, 0.2)
 
     def valid(self):
         """
@@ -82,7 +85,10 @@ class DisappearTheBlocks(object):
             if len(row) == GRID_WIDTH:
                 shift_count += 1
                 continue
-            blocks.update((shift(v) for v in row))
+            if shift_count:
+                blocks.update((shift(v) for v in row))
+            else:
+                blocks.update(row)
 
         self.blocks = blocks
 
@@ -91,9 +97,8 @@ class DisappearTheBlocks(object):
         self.current_piece.y -= 1
         if not self.valid():
             self.current_piece.y += 1
-            if now - self.last_action > 1:
+            if now - self.last_action > FREEZE_DELAY:
                 self.finish_fall()
-            return
 
     def move_piece(self, direction):
         direction = 1 if direction > 0 else -1
