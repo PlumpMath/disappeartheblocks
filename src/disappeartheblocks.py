@@ -1,6 +1,8 @@
 import pyglet
 from random import randint
 from functools import wraps
+from itertools import repeat, groupby
+from operator import itemgetter
 
 from pieces import Piece, pieces
 
@@ -20,10 +22,6 @@ def random_piece():
     y = GRID_HEIGHT - len(shape)
     return Piece(x, y, index)
 
-def yield_i(i):
-    while 1:
-        yield i
-
 class DisappearTheBlocks(object):
     """
     Implements a game of te... DisappearTheBlocks
@@ -31,7 +29,11 @@ class DisappearTheBlocks(object):
     blocks = {}
     last_action = 0 # time of last action
     current_piece = random_piece()
-    score = 0
+    _score = 0
+
+    @property
+    def score(self):
+        return self._score
 
     @property
     def state(self):
@@ -45,9 +47,12 @@ class DisappearTheBlocks(object):
         return d
 
     def start(self):
-        pyglet.clock.schedule_interval(self.tick, 0.5)
+        pyglet.clock.schedule_interval(self.tick, 0.05)
 
     def valid(self):
+        """
+        Checks to see if the piece is on the board and not on top of existing blocks
+        """
         if self.current_piece.y < 0 or self.current_piece.x < 0 \
                 or (self.current_piece.x + self.current_piece.width > GRID_WIDTH):
             return False
@@ -56,7 +61,30 @@ class DisappearTheBlocks(object):
 
     def finish_fall(self):
         self.blocks.update(self.current_piece.blocks)
+        self.make_consistent()
         self.current_piece = random_piece()
+
+    def make_consistent(self):
+        # keys are (x,y) coordinates, so we sort by the y coordinate,
+        # group, and filter out groups that aren't full
+        blocks = {}
+        y_getter = lambda value: value[0][1]
+        rows = groupby(sorted(self.blocks.iteritems(), key=y_getter),
+                       y_getter)
+
+        shift_count = 0
+        def shift(dict_value):
+            return ((dict_value[0][0], dict_value[0][1] - shift_count),
+                    dict_value[1])
+
+        for (y, row) in rows:
+            row = list(row)
+            if len(row) == GRID_WIDTH:
+                shift_count += 1
+                continue
+            blocks.update((shift(v) for v in row))
+
+        self.blocks = blocks
 
     def tick(self, dt):
         now = pyglet.clock.get_default().time()
@@ -77,7 +105,7 @@ class DisappearTheBlocks(object):
 
 
     def rotate_piece(self, direction):
-        self.last_action = pyglet.clock.get_default().time()
+        direction = 1 if direction > 0 else -1
         self.current_piece.rotate(direction)
         if not self.valid():
             self.current_piece.rotate(-direction)
@@ -88,7 +116,6 @@ class DisappearTheBlocks(object):
         while self.valid():
             self.current_piece.y -= 1
         self.current_piece.y += 1
-        self.finish_fall()
 
     def _wiggle(self):
         return True
@@ -138,7 +165,7 @@ class DisappearTheBlocksView(object):
         now_empty = s1.difference(s2)
         new_blocks = s2.difference(s1)
         delta = []
-        delta.extend(zip(now_empty, yield_i(-1)))
+        delta.extend(zip(now_empty, repeat(-1)))
         delta.extend( ((pos, state[pos]) for pos in new_blocks) )
         for (pos, index) in delta:
             if pos[1] >= GRID_HEIGHT-GRID_HIDDEN_ROWS:
