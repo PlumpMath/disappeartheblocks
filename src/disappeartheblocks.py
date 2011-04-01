@@ -91,6 +91,7 @@ class DisappearTheBlocks(object):
                 blocks.update(row)
 
         self.blocks = blocks
+        self._score += shift_count**2*10
 
     def tick(self, dt):
         now = pyglet.clock.get_default().time()
@@ -162,6 +163,8 @@ class DisappearTheBlocksView(object):
                 self.block_grid[(i,j)].visible = False
 
     def update(self):
+        self.score.text = str(game.score)
+
         state = game.state
         s1 = set(self.last_state) 
         s2 = set(state)
