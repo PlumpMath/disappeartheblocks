@@ -11,6 +11,7 @@ GRID_HIDDEN_ROWS = 2
 MOVE_LEFT_KEY = pyglet.window.key.LEFT
 MOVE_RIGHT_KEY = pyglet.window.key.RIGHT
 ROTATE_CW_KEY = pyglet.window.key.UP
+DROP_KEY = pyglet.window.key.DOWN
 
 def random_piece():
     index = randint(0, len(pieces) - 1)
@@ -23,61 +24,40 @@ def yield_i(i):
     while 1:
         yield i
 
-def capture_delta(fn):
-    """
-    Defines a decorator for use in the DisappearTheBlocks class
-    The game state is saved before calling the wrapped function,
-    and compared with the state after calling the wrapped function.
-    The differences are added to the delta list, used in rendering
-    the game
-    """
-    @wraps(fn)
-    def wrapper(self, *args, **kwargs):
-        piece = set(self.current_piece.get_coords())
-        old_state = piece.union(set(self.blocks.keys()))
-
-        ret = fn(self, *args, **kwargs)
-
-        piece = set(self.current_piece.get_coords())
-        new_state = piece.union(set(self.blocks.keys()))
-        now_empty = old_state.difference(new_state)
-        new_blocks = new_state.difference(old_state)
-
-        self.delta.extend(zip(now_empty, yield_i(-1)))
-        self.delta.extend(zip(new_blocks, yield_i(self.current_piece.index)))
-        return ret
-    return wrapper
-
 class DisappearTheBlocks(object):
     """
     Implements a game of te... DisappearTheBlocks
     """
-    delta = []
     blocks = {}
-    last_action = 0
+    last_action = 0 # time of last action
+    current_piece = random_piece()
+    score = 0
+
+    @property
+    def state(self):
+        """
+        Returns a dictionary representing the state of game, which is the
+        conjunction of the blocks on the board and the blocks of the current
+        piece
+        """
+        d = {}
+        d.update(self.blocks, **self.current_piece.blocks)
+        return d
 
     def start(self):
-        self.current_piece = random_piece()
-        self.delta.extend(zip(self.current_piece.get_coords(),
-                              yield_i(self.current_piece.index)))
         pyglet.clock.schedule_interval(self.tick, 0.5)
 
     def valid(self):
         if self.current_piece.y < 0 or self.current_piece.x < 0 \
                 or (self.current_piece.x + self.current_piece.width > GRID_WIDTH):
-            print self.current_piece.width
             return False
-        
-        return not (set(self.current_piece.get_coords()) and \
-            set(self.blocks.keys()))
+
+        return not (set(self.current_piece.blocks).intersection(set(self.blocks)))
 
     def finish_fall(self):
-        print self.current_piece.get_coords()
-        self.blocks.update(zip(self.current_piece.get_coords(),
-                               yield_i(self.current_piece.index)))
+        self.blocks.update(self.current_piece.blocks)
         self.current_piece = random_piece()
 
-    @capture_delta
     def tick(self, dt):
         now = pyglet.clock.get_default().time()
         self.current_piece.y -= 1
@@ -87,33 +67,28 @@ class DisappearTheBlocks(object):
                 self.finish_fall()
             return
 
-    @capture_delta
     def move_piece(self, direction):
-        self.last_action = pyglet.clock.get_default().time()
-        if direction > 0 and \
-                self.current_piece.x + len(self.current_piece.shape[0]) < GRID_WIDTH:
-            self.current_piece.x += 1
-        elif direction < 0 and self.current_piece.x > 0:
-            self.current_piece.x -= 1
+        direction = 1 if direction > 0 else -1
+        self.current_piece.x += direction
+        if not self.valid():
+            self.current_piece.x -= direction
+        else:
+            self.last_action = pyglet.clock.get_default().time()
 
-    @capture_delta
+
     def rotate_piece(self, direction):
         self.last_action = pyglet.clock.get_default().time()
         self.current_piece.rotate(direction)
         if not self.valid():
             self.current_piece.rotate(-direction)
+        else:
+            self.last_action = pyglet.clock.get_default().time()
 
-    @capture_delta
     def drop_piece(self):
         while self.valid():
             self.current_piece.y -= 1
         self.current_piece.y += 1
         self.finish_fall()
-
-    def pop_delta(self):
-        d = self.delta
-        self.delta = []
-        return d
 
     def _wiggle(self):
         return True
@@ -121,14 +96,29 @@ class DisappearTheBlocks(object):
 class DisappearTheBlocksView(object):
     """
     """
-    def __init__(self, x, y, block_img):
+
+    def __init__(self, game, x, y, block_img):
+        self.game = game
+        self.last_state = set()
+        self.batch = pyglet.graphics.Batch()
+        
+    
         width = block_img.width
+
+        self.score_label = pyglet.text.Label("score", font_size=20,
+                                             anchor_x="center",
+                                             x=x + width*GRID_WIDTH + 100,
+                                             y=400, batch=self.batch)
+        self.score_label.bold = True
+        self.score = pyglet.text.Label(str(game.score), font_size=16,
+                                       anchor_x="center",
+                                       x=x + width*GRID_WIDTH + 100,
+                                       y=360, batch=self.batch)
+
         self.bb_coords = (x-1, y-1,
                           x + width*GRID_WIDTH, y-1,
-                          x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
-                          x-1, y + width*GRID_HEIGHT)
-
-        self.batch = pyglet.graphics.Batch()
+                          x + width*GRID_WIDTH, y + width*(GRID_HEIGHT-GRID_HIDDEN_ROWS),
+                          x-1, y + width*(GRID_HEIGHT-GRID_HIDDEN_ROWS))
 
         self.block_grid = {}
         for i in range(GRID_WIDTH):
@@ -139,9 +129,19 @@ class DisappearTheBlocksView(object):
                                                               y=y + j*width)
                 self.block_grid[(i,j)].visible = False
 
-    def update(self, delta):
+    def update(self):
+        state = game.state
+        s1 = set(self.last_state) 
+        s2 = set(state)
+        self.last_state = state
+
+        now_empty = s1.difference(s2)
+        new_blocks = s2.difference(s1)
+        delta = []
+        delta.extend(zip(now_empty, yield_i(-1)))
+        delta.extend( ((pos, state[pos]) for pos in new_blocks) )
         for (pos, index) in delta:
-            if pos[1] >= GRID_HEIGHT-2:
+            if pos[1] >= GRID_HEIGHT-GRID_HIDDEN_ROWS:
                 continue
             sprite = self.block_grid[pos]
             if index == -1:
@@ -162,7 +162,8 @@ class DisappearTheBlocksKeyboardController(object):
     def __init__(self, move_fn, rotate_fn, drop_fn):
         self.mapping = {MOVE_LEFT_KEY: lambda: move_fn(-1),
                         MOVE_RIGHT_KEY: lambda:move_fn(1),
-                        ROTATE_CW_KEY: lambda: rotate_fn(1)}
+                        ROTATE_CW_KEY: lambda: rotate_fn(1),
+                        DROP_KEY: lambda: drop_fn()}
 
     def on_key_press(self, symbol, modifiers):
         if symbol in self.mapping:
@@ -173,7 +174,7 @@ if __name__ == '__main__':
     img = pyglet.image.load('block.png')
     print 'loaded'
     game = DisappearTheBlocks()
-    view = DisappearTheBlocksView(400-125, 20, img)
+    view = DisappearTheBlocksView(game, 400-125, 20, img)
     controller = DisappearTheBlocksKeyboardController(game.move_piece,
                                                       game.rotate_piece,
                                                       game.drop_piece)
@@ -181,7 +182,7 @@ if __name__ == '__main__':
     @window.event
     def on_draw():
         window.clear()
-        view.update(game.pop_delta())
+        view.update()
         view.draw()
 
     window.push_handlers(controller)

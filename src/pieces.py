@@ -66,17 +66,18 @@ class Piece(object):
         # one liner to compute the transpose of a matrix... not
         # efficient for larger sized matrices but for these small ones
         # it's fine
-        self.shape = zip(*self.shape[::-1*direction])
+        self.shape = zip(*self.shape[::-1*direction])[::1*direction]
         self.width = len(self.shape[0])
 
-    def get_coords(self):
-        coords = []
+    @property
+    def blocks(self):
+        blocks = {}
         height = len(self.shape)
         for (i, row) in enumerate(self.shape):
             for (j, value) in enumerate(row):
                 if value != -1:
-                    coords.append((self.x + j, self.y + height - 1 - i))
-        return coords
+                    blocks[(self.x + j, self.y + height - (i + 1))] = self.index
+        return blocks
 
     def __repr__(self):
         return "(%d, %d): %s" % (self.x, self.y, str(self.shape))
