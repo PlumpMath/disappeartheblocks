@@ -383,7 +383,7 @@ class DisappearTheBlocksView(object):
     def draw(self):
         pyglet.gl.glColor3f(1.0, 1.0, 1.0)
         pyglet.graphics.draw(4, pyglet.gl.GL_LINE_LOOP,
-                             ('v2i', self.bb_coords))
+                             ('v2i', self.bounding_box_coords))
         self.batch.draw()
         self.draw_overlay()
 
