@@ -30,8 +30,6 @@ game_over_overlay_html = '''
 </center>
 '''
 
-
-
 def calc_dt(level):
     time = 0.5 - level*.06
     if time < .05:
@@ -44,7 +42,7 @@ def calc_score(level, rows):
 def input_protect(fn):
     """
     Decorator that prevents a function from being run if the
-    game is paused or over.  Used with control inputs
+    game is paused or over.
     """
     def safe(self, *args, **kwargs):
         if self.paused or self.over:
@@ -91,6 +89,7 @@ class DisappearTheBlocks(object):
         pyglet.clock.schedule_interval(self.tick, calc_dt(self.level))
         
     def stop(self):
+        self.paused = True
         pyglet.clock.unschedule(self.tick)
 
     def restart(self):
@@ -110,10 +109,8 @@ class DisappearTheBlocks(object):
     def toggle_pause(self):
         if self.paused:
             self.start()
-            self.paused = False
         else:
             self.stop()
-            self.paused = True
 
     def valid(self):
         """
@@ -141,6 +138,7 @@ class DisappearTheBlocks(object):
         self.update_score(rows)
         self.update_level(rows)
         
+        # if any part of the block is frozen outside the game board, that's game over
         if self.current_piece.y + self.current_piece.height >= GRID_HEIGHT:
             self.over = True
             self.stop()
@@ -148,8 +146,7 @@ class DisappearTheBlocks(object):
         self.current_piece = self.next_piece
         self.current_piece.x = GRID_WIDTH//2
         self.current_piece.y = GRID_HEIGHT + 1
-        self.next_piece = random_piece(0,
-                                       0)
+        self.next_piece = random_piece(0, 0)
 
     def make_consistent(self):
         """
@@ -202,8 +199,8 @@ class DisappearTheBlocks(object):
         if not self.valid():
             if not self.wiggle_piece():
                 self.current_piece.rotate(-direction)
-        else:
-            self.last_action = pyglet.clock.get_default().time()
+                return
+        self.last_action = pyglet.clock.get_default().time()
 
     @input_protect
     def drop_piece(self):
@@ -226,6 +223,7 @@ class DisappearTheBlocks(object):
 
 class DisappearTheBlocksView(object):
     """
+    Displays a game
     """
 
     def __init__(self, game, x, y, block_img):
@@ -247,7 +245,7 @@ class DisappearTheBlocksView(object):
         self.build_grid()
         self.build_labels()
 
-        self.bb_coords = (x-1, y-1,
+        self.bounding_box_coords = (x-1, y-1,
                           x + width*GRID_WIDTH, y-1,
                           x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
                           x-1, y + width*GRID_HEIGHT)
