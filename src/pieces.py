@@ -55,7 +55,6 @@ class Piece(object):
     def __init__(self, x, y, index):
         self.index = index
         self.shape = pieces[index]['shape']
-        self.width = len(self.shape[0])
         self.x, self.y = (x, y)
 
     def rotate(self, direction):
@@ -68,7 +67,14 @@ class Piece(object):
         # efficient for larger sized matrices but for these small ones
         # it's fine
         self.shape = zip(*self.shape[::-1*direction])[::1*direction]
-        self.width = len(self.shape[0])
+
+    @property
+    def width(self):
+        return len(self.shape[0])
+    
+    @property
+    def height(self):
+        return len(self.shape)
 
     @property
     def left_edge(self):
@@ -81,7 +87,7 @@ class Piece(object):
     @property
     def blocks(self):
         blocks = {}
-        height = len(self.shape)
+        height = self.height
         for (i, row) in enumerate(self.shape):
             for (j, value) in enumerate(row):
                 j = j - (self.width-1)//2

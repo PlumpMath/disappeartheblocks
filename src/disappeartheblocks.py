@@ -25,13 +25,13 @@ def calc_dt(level):
 def calc_score(level, rows):
     return ((level+1)**2)*(rows**2)*10
 
-def pause_protect(fn):
+def input_protect(fn):
     """
     Decorator that prevents a function from being run if the
-    game is paused
+    game is paused or over.  Used with control inputs
     """
     def safe(self, *args, **kwargs):
-        if self.paused:
+        if self.paused or self.over:
             return
         return fn(self, *args, **kwargs)
     return safe
@@ -46,6 +46,7 @@ class DisappearTheBlocks(object):
     level = 0
     rows_cleared = 0
     paused = False
+    over = False
 
     def __init__(self):
         self.current_piece = random_piece(GRID_WIDTH//2,
@@ -70,7 +71,7 @@ class DisappearTheBlocks(object):
     def start(self):
         self.paused = False
         pyglet.clock.schedule_interval(self.tick, calc_dt(self.level))
-
+        
     def stop(self):
         pyglet.clock.unschedule(self.tick)
 
@@ -85,6 +86,7 @@ class DisappearTheBlocks(object):
         self.current_piece = random_piece(GRID_WIDTH//2,
                                           GRID_HEIGHT + 1)
         self.next_piece = random_piece(0,0)
+        self.over = False
         self.start()
 
     def toggle_pause(self):
@@ -120,13 +122,16 @@ class DisappearTheBlocks(object):
         rows = self.make_consistent()
         self.update_score(rows)
         self.update_level(rows)
+        
+        if self.current_piece.y + self.current_piece.height >= GRID_HEIGHT:
+            self.over = True
+            self.stop()
+
         self.current_piece = self.next_piece
         self.current_piece.x = GRID_WIDTH//2
         self.current_piece.y = GRID_HEIGHT + 1
         self.next_piece = random_piece(0,
                                        0)
-        if not self.valid():
-            game.stop()
 
     def make_consistent(self):
         """
@@ -139,21 +144,21 @@ class DisappearTheBlocks(object):
         rows = groupby(sorted(self.blocks.iteritems(), key=y_getter),
                        y_getter)
 
-        shift_count = 0
-        shift = lambda ((x,y), idx): ((x, y - shift_count),
+        rows_cleared = 0
+        shift = lambda ((x,y), idx): ((x, y - rows_cleared),
                                      idx)
         for (y, row) in rows:
             row = list(row)
             if len(row) == GRID_WIDTH:
-                shift_count += 1
+                rows_cleared += 1
                 continue
-            if shift_count:
+            if rows_cleared:
                 blocks.update((shift(v) for v in row))
             else:
                 blocks.update(row)
 
         self.blocks = blocks
-        return shift_count
+        return rows_cleared
 
     def tick(self, dt):
         now = pyglet.clock.get_default().time()
@@ -163,7 +168,7 @@ class DisappearTheBlocks(object):
             if now - self.last_action > FREEZE_DELAY:
                 self.finish_fall()
 
-    @pause_protect
+    @input_protect
     def move_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.x += direction
@@ -172,7 +177,7 @@ class DisappearTheBlocks(object):
         else:
             self.last_action = pyglet.clock.get_default().time()
 
-    @pause_protect
+    @input_protect
     def rotate_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.rotate(direction)
@@ -182,7 +187,7 @@ class DisappearTheBlocks(object):
         else:
             self.last_action = pyglet.clock.get_default().time()
 
-    @pause_protect
+    @input_protect
     def drop_piece(self):
         while self.valid():
             self.current_piece.y -= 1
@@ -347,7 +352,7 @@ class DisappearTheBlocksKeyboardController(object):
 
 if __name__ == '__main__':
     window = pyglet.window.Window(800, 600)
-    img = pyglet.image.load('block.png')
+    img = pyglet.resource.image('block.png')
     game = DisappearTheBlocks()
     view = DisappearTheBlocksView(game, 400-125, 20, img)
     controller = DisappearTheBlocksKeyboardController(game.move_piece,
