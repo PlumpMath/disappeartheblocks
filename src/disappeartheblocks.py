@@ -30,7 +30,11 @@ game_over_overlay_html = '''
 </center>
 '''
 
-def calc_dt(level):
+
+def calc_tick_dt(level):
+    """
+    Calculates the fall velocity of pieces given a level
+    """
     time = 0.5 - level*.06
     if time < .05:
         time = .05
@@ -86,7 +90,7 @@ class DisappearTheBlocks(object):
         if self.over:
             return
         self.paused = False
-        pyglet.clock.schedule_interval(self.tick, calc_dt(self.level))
+        pyglet.clock.schedule_interval(self.tick, calc_tick_dt(self.level))
         
     def stop(self):
         self.paused = True
@@ -130,7 +134,34 @@ class DisappearTheBlocks(object):
         if self.level < self.rows_cleared//20:
             self.level += 1
             pyglet.clock.unschedule(self.tick)
-            pyglet.clock.schedule_interval(self.tick, calc_dt(self.level))
+            pyglet.clock.schedule_interval(self.tick, calc_tick_dt(self.level))
+
+    def make_consistent(self):
+        """
+        Called after a piece is frozen, make_consistent() clears full rows
+        and shifts down rows appropriately.  Returns the number of rows cleared
+        """
+        blocks = {}
+        # function to get the y coordinate from an element of dict.iteritems()
+        y_getter = lambda ((x, y), index): y
+        rows = groupby(sorted(self.blocks.iteritems(), key=y_getter),
+                       y_getter)
+
+        rows_cleared = 0
+        shift = lambda ((x,y), index): ((x, y - rows_cleared),
+                                        index)
+        for (y, row) in rows:
+            row = list(row)
+            if len(row) == GRID_WIDTH:
+                rows_cleared += 1
+                continue
+            if rows_cleared:
+                blocks.update((shift(v) for v in row))
+            else:
+                blocks.update(row)
+
+        self.blocks = blocks
+        return rows_cleared
 
     def finish_fall(self):
         self.blocks.update(self.current_piece.blocks)
@@ -147,33 +178,6 @@ class DisappearTheBlocks(object):
         self.current_piece.x = GRID_WIDTH//2
         self.current_piece.y = GRID_HEIGHT + 1
         self.next_piece = random_piece(0, 0)
-
-    def make_consistent(self):
-        """
-        Called after a piece is frozen, make_consistent() clears full rows
-        and shifts down rows appropriately.  Returns the number of rows cleared
-        """
-        blocks = {}
-        # function to get the y coordinate from an element of dict.iteritems()
-        y_getter = lambda ((x, y), index): y
-        rows = groupby(sorted(self.blocks.iteritems(), key=y_getter),
-                       y_getter)
-
-        rows_cleared = 0
-        shift = lambda ((x,y), idx): ((x, y - rows_cleared),
-                                     idx)
-        for (y, row) in rows:
-            row = list(row)
-            if len(row) == GRID_WIDTH:
-                rows_cleared += 1
-                continue
-            if rows_cleared:
-                blocks.update((shift(v) for v in row))
-            else:
-                blocks.update(row)
-
-        self.blocks = blocks
-        return rows_cleared
 
     def tick(self, dt):
         now = pyglet.clock.get_default().time()
@@ -246,9 +250,9 @@ class DisappearTheBlocksView(object):
         self.build_labels()
 
         self.bounding_box_coords = (x-1, y-1,
-                          x + width*GRID_WIDTH, y-1,
-                          x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
-                          x-1, y + width*GRID_HEIGHT)
+                                    x + width*GRID_WIDTH, y-1,
+                                    x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
+                                    x-1, y + width*GRID_HEIGHT)
 
     def build_grid(self):
         self.block_grid = {}
