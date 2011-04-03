@@ -16,6 +16,22 @@ DROP_KEY = pyglet.window.key.DOWN
 PAUSE_KEY = pyglet.window.key.P
 RESTART_KEY = pyglet.window.key.SPACE
 
+pause_overlay_html = '''
+<center>
+<b><h1>game paused</h1></b><br>
+<h2>p to unpause<br>
+space for new game</h2>
+</center>
+'''
+game_over_overlay_html = '''
+<center>
+<b><h1>game over!</h1></b><br>
+<h2>space for new game</h2>
+</center>
+'''
+
+
+
 def calc_dt(level):
     time = 0.5 - level*.06
     if time < .05:
@@ -45,7 +61,7 @@ class DisappearTheBlocks(object):
     _score = 0
     level = 0
     rows_cleared = 0
-    paused = False
+    paused = True
     over = False
 
     def __init__(self):
@@ -69,6 +85,8 @@ class DisappearTheBlocks(object):
         return d
 
     def start(self):
+        if self.over:
+            return
         self.paused = False
         pyglet.clock.schedule_interval(self.tick, calc_dt(self.level))
         
@@ -76,7 +94,7 @@ class DisappearTheBlocks(object):
         pyglet.clock.unschedule(self.tick)
 
     def restart(self):
-        if not self.paused:
+        if not (self.paused or self.over):
             return
 
         self.blocks = {}
@@ -217,12 +235,14 @@ class DisappearTheBlocksView(object):
         self.block_img = block_img
         self.last_state = set()
         self.batch = pyglet.graphics.Batch()
+        self.game_group = pyglet.graphics.OrderedGroup(0)
+        self.overlay_group = pyglet.graphics.OrderedGroup(1)
         self.next_piece_blocks = []
         self.next_piece = None
         
         width = block_img.width
-        self.next_piece_anchor = (x + width*GRID_WIDTH + 125,
-                                  450)
+        self.next_piece_anchor = (x + width*GRID_WIDTH + 110,
+                                  440)
 
         self.build_grid()
         self.build_labels()
@@ -238,47 +258,72 @@ class DisappearTheBlocksView(object):
         for i in range(GRID_WIDTH):
             for j in range(GRID_HEIGHT):
                 self.block_grid[(i,j)] = pyglet.sprite.Sprite(self.block_img,
-                                                              batch=self.batch,
                                                               x=self.x + i*width,
-                                                              y=self.y + j*width)
+                                                              y=self.y + j*width,
+                                                              batch=self.batch,
+                                                              group=self.game_group)
                 self.block_grid[(i,j)].visible = False
 
     def build_labels(self):
         width = self.block_img.width
+
+        self.paused_label = pyglet.text.HTMLLabel(pause_overlay_html,
+                                                  anchor_x="center",
+                                                  x=self.x + width*GRID_WIDTH//2,
+                                                  y=450,
+                                                  group=self.overlay_group,
+                                                  multiline=True, width=width*GRID_WIDTH)
+        self.paused_label.color = (255,255,255,255)
+
+        self.game_over_label = pyglet.text.HTMLLabel(game_over_overlay_html,
+                                                  anchor_x="center",
+                                                  x=self.x + width*GRID_WIDTH//2,
+                                                  y=450,
+                                                  group=self.overlay_group,
+                                                  multiline=True, width=width*GRID_WIDTH)
+        self.game_over_label.color = (255,255,255,255)
+
         self.next_piece_label = pyglet.text.Label("next piece", font_size=20,
                                                   anchor_x="center",
                                                   x=self.x + width*GRID_WIDTH + 125,
-                                                  y=560, batch=self.batch)
+                                                  y=550, batch=self.batch,
+                                                  group=self.game_group)
         self.next_piece_label.bold = True
         self.score_label = pyglet.text.Label("score", font_size=20,
                                              anchor_x="center",
                                              x=self.x + width*GRID_WIDTH + 125,
-                                             y=400, batch=self.batch)
+                                             y=400, batch=self.batch,
+                                             group=self.game_group)
         self.score_label.bold = True
         self.score = pyglet.text.Label(str(self.game.score), font_size=16,
                                        anchor_x="center",
                                        x=self.x + width*GRID_WIDTH + 125,
-                                       y=380, batch=self.batch)
+                                       y=380, batch=self.batch,
+                                       group=self.game_group)
 
         self.level_label = pyglet.text.Label("level", font_size=20,
                                              anchor_x="center",
                                              x=self.x + width*GRID_WIDTH + 125,
-                                             y=340, batch=self.batch)
+                                             y=340, batch=self.batch,
+                                             group=self.game_group)
         self.level_label.bold = True
         self.level = pyglet.text.Label(str(self.game.level), font_size=16,
                                        anchor_x="center",
                                        x=self.x + width*GRID_WIDTH + 125,
-                                       y=320, batch=self.batch)
+                                       y=320, batch=self.batch,
+                                       group=self.game_group)
 
         self.rows_cleared_label = pyglet.text.Label("rows cleared", font_size=20,
-                                             anchor_x="center",
-                                             x=self.x + width*GRID_WIDTH + 125,
-                                             y=280, batch=self.batch)
+                                                    anchor_x="center",
+                                                    x=self.x + width*GRID_WIDTH + 125,
+                                                    y=280, batch=self.batch,
+                                                    group=self.game_group)
         self.rows_cleared_label.bold = True
         self.rows_cleared = pyglet.text.Label(str(self.game.rows_cleared), font_size=16,
-                                       anchor_x="center",
-                                       x=self.x + width*GRID_WIDTH + 125,
-                                       y=260, batch=self.batch)
+                                              anchor_x="center",
+                                              x=self.x + width*GRID_WIDTH + 125,
+                                              y=260, batch=self.batch,
+                                              group=self.game_group)
 
     def build_next_piece(self):
         del self.next_piece_blocks
@@ -288,9 +333,11 @@ class DisappearTheBlocksView(object):
         width = self.block_img.width
         for ((x,y), index) in self.next_piece.blocks.iteritems():
             sprite = pyglet.sprite.Sprite(self.block_img,
-                                          batch=self.batch,
                                           x=ax+x*width,
-                                          y=ay+y*width)
+                                          y=ay+y*width,
+                                          batch=self.batch,
+                                          group=self.game_group)
+
             sprite.color = pieces[index]['color']
             self.next_piece_blocks.append(sprite)
             
@@ -322,6 +369,12 @@ class DisappearTheBlocksView(object):
                 sprite.visible = True
                 sprite.color = pieces[index]['color']
 
+    def draw_overlay(self):
+        if game.over:
+            self.game_over_label.draw()
+        elif game.paused:
+            self.paused_label.draw()
+
     def update(self):
         self.score.text = str(game.score)
         self.level.text = str(game.level)
@@ -334,6 +387,7 @@ class DisappearTheBlocksView(object):
         pyglet.graphics.draw(4, pyglet.gl.GL_LINE_LOOP,
                              ('v2i', self.bb_coords))
         self.batch.draw()
+        self.draw_overlay()
 
 
 class DisappearTheBlocksKeyboardController(object):
@@ -355,6 +409,7 @@ if __name__ == '__main__':
     img = pyglet.resource.image('block.png')
     game = DisappearTheBlocks()
     view = DisappearTheBlocksView(game, 400-125, 20, img)
+    
     controller = DisappearTheBlocksKeyboardController(game.move_piece,
                                                       game.rotate_piece,
                                                       game.drop_piece,
@@ -368,5 +423,4 @@ if __name__ == '__main__':
         view.draw()
 
     window.push_handlers(controller)
-    game.start()
     pyglet.app.run()
