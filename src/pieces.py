@@ -1,4 +1,5 @@
 from copy import deepcopy
+from random import randint
 
 # define the DisappearTheBlocks pieces
 # spaces are interpreted as empty areas,
@@ -48,14 +49,14 @@ pieces = normalize_pieces(pieces)
 
 class Piece(object):
     """
-    Pieces are represented by their lower-left (x,y) coordinate in grid-space
+    Pieces are represented by their bottom-center (x,y) coordinate in grid-space
     and their shape (see the defintion of pieces)
     """
     def __init__(self, x, y, index):
-        self.x, self.y = (x,y)
         self.index = index
         self.shape = pieces[index]['shape']
         self.width = len(self.shape[0])
+        self.x, self.y = (x, y)
 
     def rotate(self, direction):
         """
@@ -70,14 +71,28 @@ class Piece(object):
         self.width = len(self.shape[0])
 
     @property
+    def left_edge(self):
+        return self.x - (self.width-1)//2
+
+    @property
+    def right_edge(self):
+        return self.x + self.width//2
+
+    @property
     def blocks(self):
         blocks = {}
         height = len(self.shape)
         for (i, row) in enumerate(self.shape):
             for (j, value) in enumerate(row):
+                j = j - (self.width-1)//2
                 if value != -1:
                     blocks[(self.x + j, self.y + height - (i + 1))] = self.index
         return blocks
 
     def __repr__(self):
         return "(%d, %d): %s" % (self.x, self.y, str(self.shape))
+
+def random_piece(x, y):
+    index = randint(0, len(pieces) - 1)
+    shape = pieces[index]['shape']
+    return Piece(x, y, index)

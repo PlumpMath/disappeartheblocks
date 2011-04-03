@@ -1,10 +1,8 @@
 import pyglet
-from random import randint
 from functools import wraps
 from itertools import repeat, groupby
-from operator import itemgetter
 
-from pieces import Piece, pieces
+from pieces import *
 
 GRID_WIDTH = 10
 GRID_HEIGHT = 22
@@ -17,21 +15,20 @@ MOVE_RIGHT_KEY = pyglet.window.key.RIGHT
 ROTATE_CW_KEY = pyglet.window.key.UP
 DROP_KEY = pyglet.window.key.DOWN
 
-def random_piece():
-    index = randint(0, len(pieces) - 1)
-    shape = pieces[index]['shape']
-    x = GRID_WIDTH//2 - len(shape[0])//2
-    y = GRID_HEIGHT + 1
-    return Piece(x, y, index)
-
 class DisappearTheBlocks(object):
     """
     Implements a game of te... DisappearTheBlocks
     """
     blocks = {}
     last_action = 0 # time of last action
-    current_piece = random_piece()
     _score = 0
+    level = 0
+    rows_cleared = 0
+
+    def __init__(self):
+        self.current_piece = random_piece(GRID_WIDTH//2,
+                                          GRID_HEIGHT + 1)
+        self.next_piece = random_piece(0,0)
 
     @property
     def score(self):
@@ -49,7 +46,7 @@ class DisappearTheBlocks(object):
         return d
 
     def start(self):
-        pyglet.clock.schedule_interval(self.tick, 0.2)
+        pyglet.clock.schedule_interval(self.tick, 0.5)
     def end(self):
         pyglet.clock.unschedule(self.tick)
 
@@ -57,32 +54,52 @@ class DisappearTheBlocks(object):
         """
         Checks to see if the piece is on the board and not on top of existing blocks
         """
-        if self.current_piece.y < 0 or self.current_piece.x < 0 \
-                or (self.current_piece.x + self.current_piece.width > GRID_WIDTH):
+        if self.current_piece.y < 0 or self.current_piece.left_edge < 0 \
+                or (self.current_piece.right_edge >= GRID_WIDTH):
             return False
 
         return not (set(self.current_piece.blocks).intersection(set(self.blocks)))
 
+    def update_score(self, rows):
+        self._score += ((self.level+1)**2)*(rows**2)*10
+    
+    def update_level(self, rows):
+        self.rows_cleared += rows
+        if self.level < self.rows_cleared//20:
+            self.level += 1
+            time = 0.5 - self.level*.06
+            if time < .05:
+                time = .05
+            pyglet.clock.unschedule(self.tick)
+            pyglet.clock.schedule_interval(self.tick, time)
+
     def finish_fall(self):
         self.blocks.update(self.current_piece.blocks)
-        self.make_consistent()
-        self.current_piece = random_piece()
+        rows = self.make_consistent()
+        self.update_score(rows)
+        self.update_level(rows)
+        self.current_piece = self.next_piece
+        self.current_piece.x = GRID_WIDTH//2
+        self.current_piece.y = GRID_HEIGHT + 1
+        self.next_piece = random_piece(0,
+                                       0)
         if not self.valid():
             game.end()
 
     def make_consistent(self):
-        # keys are (x,y) coordinates, so we sort by the y coordinate,
-        # group, and filter out groups that aren't full
+        """
+        Called after a piece is frozen, make_consistent() clears full rows
+        and shifts down rows appropriately.  Returns the number of rows cleared
+        """
         blocks = {}
-        y_getter = lambda value: value[0][1]
+        # function to get the y coordinate from an element of dict.iteritems()
+        y_getter = lambda ((x, y), index): y
         rows = groupby(sorted(self.blocks.iteritems(), key=y_getter),
                        y_getter)
 
         shift_count = 0
-        def shift(dict_value):
-            return ((dict_value[0][0], dict_value[0][1] - shift_count),
-                    dict_value[1])
-
+        shift = lambda ((x,y), idx): ((x, y - shift_count),
+                                     idx)
         for (y, row) in rows:
             row = list(row)
             if len(row) == GRID_WIDTH:
@@ -94,7 +111,7 @@ class DisappearTheBlocks(object):
                 blocks.update(row)
 
         self.blocks = blocks
-        self._score += shift_count**2*10
+        return shift_count
 
     def tick(self, dt):
         now = pyglet.clock.get_default().time()
@@ -112,12 +129,12 @@ class DisappearTheBlocks(object):
         else:
             self.last_action = pyglet.clock.get_default().time()
 
-
     def rotate_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.rotate(direction)
         if not self.valid():
-            self.current_piece.rotate(-direction)
+            if not self.wiggle_piece():
+                self.current_piece.rotate(-direction)
         else:
             self.last_action = pyglet.clock.get_default().time()
 
@@ -126,8 +143,18 @@ class DisappearTheBlocks(object):
             self.current_piece.y -= 1
         self.current_piece.y += 1
 
-    def _wiggle(self):
-        return True
+    def wiggle_piece(self):
+        """
+        If a rotation isn't successful, try to wiggle it around
+        a bit to make it fit
+        """
+        for d in [-1, 1, -2, -3]:
+            self.current_piece.x += d
+            if self.valid():
+                return True
+            self.current_piece.x -= d
+        
+        return False
 
 class DisappearTheBlocksView(object):
     """
@@ -135,38 +162,99 @@ class DisappearTheBlocksView(object):
 
     def __init__(self, game, x, y, block_img):
         self.game = game
+        self.x = x
+        self.y = y
+        self.block_img = block_img
         self.last_state = set()
         self.batch = pyglet.graphics.Batch()
+        self.next_piece_blocks = []
+        self.next_piece = None
         
-    
         width = block_img.width
+        self.next_piece_anchor = (x + width*GRID_WIDTH + 125,
+                                  450)
 
-        self.score_label = pyglet.text.Label("score", font_size=20,
-                                             anchor_x="center",
-                                             x=x + width*GRID_WIDTH + 100,
-                                             y=400, batch=self.batch)
-        self.score_label.bold = True
-        self.score = pyglet.text.Label(str(game.score), font_size=16,
-                                       anchor_x="center",
-                                       x=x + width*GRID_WIDTH + 100,
-                                       y=360, batch=self.batch)
+        self.build_grid()
+        self.build_labels()
 
         self.bb_coords = (x-1, y-1,
                           x + width*GRID_WIDTH, y-1,
                           x + width*GRID_WIDTH, y + width*GRID_HEIGHT,
                           x-1, y + width*GRID_HEIGHT)
 
+    def build_grid(self):
         self.block_grid = {}
+        width = self.block_img.width
         for i in range(GRID_WIDTH):
             for j in range(GRID_HEIGHT):
-                self.block_grid[(i,j)] = pyglet.sprite.Sprite(block_img,
+                self.block_grid[(i,j)] = pyglet.sprite.Sprite(self.block_img,
                                                               batch=self.batch,
-                                                              x=x + i*width,
-                                                              y=y + j*width)
+                                                              x=self.x + i*width,
+                                                              y=self.y + j*width)
                 self.block_grid[(i,j)].visible = False
+
+    def build_labels(self):
+        width = self.block_img.width
+        self.next_piece_label = pyglet.text.Label("next piece", font_size=20,
+                                                  anchor_x="center",
+                                                  x=self.x + width*GRID_WIDTH + 125,
+                                                  y=560, batch=self.batch)
+        self.next_piece_label.bold = True
+        self.score_label = pyglet.text.Label("score", font_size=20,
+                                             anchor_x="center",
+                                             x=self.x + width*GRID_WIDTH + 125,
+                                             y=400, batch=self.batch)
+        self.score_label.bold = True
+        self.score = pyglet.text.Label(str(self.game.score), font_size=16,
+                                       anchor_x="center",
+                                       x=self.x + width*GRID_WIDTH + 125,
+                                       y=380, batch=self.batch)
+
+        self.level_label = pyglet.text.Label("level", font_size=20,
+                                             anchor_x="center",
+                                             x=self.x + width*GRID_WIDTH + 125,
+                                             y=340, batch=self.batch)
+        self.level_label.bold = True
+        self.level = pyglet.text.Label(str(self.game.level), font_size=16,
+                                       anchor_x="center",
+                                       x=self.x + width*GRID_WIDTH + 125,
+                                       y=320, batch=self.batch)
+
+        self.rows_cleared_label = pyglet.text.Label("rows cleared", font_size=20,
+                                             anchor_x="center",
+                                             x=self.x + width*GRID_WIDTH + 125,
+                                             y=280, batch=self.batch)
+        self.rows_cleared_label.bold = True
+        self.rows_cleared = pyglet.text.Label(str(self.game.rows_cleared), font_size=16,
+                                       anchor_x="center",
+                                       x=self.x + width*GRID_WIDTH + 125,
+                                       y=260, batch=self.batch)
+
+    def build_next_piece(self):
+        del self.next_piece_blocks
+        self.next_piece_blocks = []
+
+        ax, ay = self.next_piece_anchor
+        width = self.block_img.width
+        for (pos, index) in self.next_piece.blocks.iteritems():
+            sprite = pyglet.sprite.Sprite(self.block_img,
+                                          batch=self.batch,
+                                          x=ax+pos[0]*width,
+                                          y=ay+pos[1]*width)
+            sprite.color = pieces[index]['color']
+            self.next_piece_blocks.append(sprite)
+            
+    def update_next_piece(self):
+        if self.next_piece is self.game.next_piece:
+            return
+        self.next_piece = game.next_piece
+        self.build_next_piece()
 
     def update(self):
         self.score.text = str(game.score)
+        self.level.text = str(game.level)
+        self.rows_cleared.text = str(game.rows_cleared)
+        self.update_next_piece()
 
         state = game.state
         s1 = set(self.last_state) 
