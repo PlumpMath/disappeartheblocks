@@ -1,5 +1,4 @@
 import pyglet
-from functools import wraps
 from itertools import repeat, groupby
 
 from pieces import *
@@ -14,6 +13,28 @@ MOVE_LEFT_KEY = pyglet.window.key.LEFT
 MOVE_RIGHT_KEY = pyglet.window.key.RIGHT
 ROTATE_CW_KEY = pyglet.window.key.UP
 DROP_KEY = pyglet.window.key.DOWN
+PAUSE_KEY = pyglet.window.key.P
+RESTART_KEY = pyglet.window.key.SPACE
+
+def calc_dt(level):
+    time = 0.5 - level*.06
+    if time < .05:
+        time = .05
+    return time
+
+def calc_score(level, rows):
+    return ((level+1)**2)*(rows**2)*10
+
+def pause_protect(fn):
+    """
+    Decorator that prevents a function from being run if the
+    game is paused
+    """
+    def safe(self, *args, **kwargs):
+        if self.paused:
+            return
+        return fn(self, *args, **kwargs)
+    return safe
 
 class DisappearTheBlocks(object):
     """
@@ -24,6 +45,7 @@ class DisappearTheBlocks(object):
     _score = 0
     level = 0
     rows_cleared = 0
+    paused = False
 
     def __init__(self):
         self.current_piece = random_piece(GRID_WIDTH//2,
@@ -46,9 +68,32 @@ class DisappearTheBlocks(object):
         return d
 
     def start(self):
-        pyglet.clock.schedule_interval(self.tick, 0.5)
-    def end(self):
+        self.paused = False
+        pyglet.clock.schedule_interval(self.tick, calc_dt(self.level))
+
+    def stop(self):
         pyglet.clock.unschedule(self.tick)
+
+    def restart(self):
+        if not self.paused:
+            return
+
+        self.blocks = {}
+        self._score = 0
+        self.level = 0
+        self.rows_cleared = 0
+        self.current_piece = random_piece(GRID_WIDTH//2,
+                                          GRID_HEIGHT + 1)
+        self.next_piece = random_piece(0,0)
+        self.start()
+
+    def toggle_pause(self):
+        if self.paused:
+            self.start()
+            self.paused = False
+        else:
+            self.stop()
+            self.paused = True
 
     def valid(self):
         """
@@ -61,17 +106,14 @@ class DisappearTheBlocks(object):
         return not (set(self.current_piece.blocks).intersection(set(self.blocks)))
 
     def update_score(self, rows):
-        self._score += ((self.level+1)**2)*(rows**2)*10
+        self._score += calc_score(self.level, rows)
     
     def update_level(self, rows):
         self.rows_cleared += rows
         if self.level < self.rows_cleared//20:
             self.level += 1
-            time = 0.5 - self.level*.06
-            if time < .05:
-                time = .05
             pyglet.clock.unschedule(self.tick)
-            pyglet.clock.schedule_interval(self.tick, time)
+            pyglet.clock.schedule_interval(self.tick, calc_dt(self.level))
 
     def finish_fall(self):
         self.blocks.update(self.current_piece.blocks)
@@ -84,7 +126,7 @@ class DisappearTheBlocks(object):
         self.next_piece = random_piece(0,
                                        0)
         if not self.valid():
-            game.end()
+            game.stop()
 
     def make_consistent(self):
         """
@@ -121,6 +163,7 @@ class DisappearTheBlocks(object):
             if now - self.last_action > FREEZE_DELAY:
                 self.finish_fall()
 
+    @pause_protect
     def move_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.x += direction
@@ -129,6 +172,7 @@ class DisappearTheBlocks(object):
         else:
             self.last_action = pyglet.clock.get_default().time()
 
+    @pause_protect
     def rotate_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.rotate(direction)
@@ -138,6 +182,7 @@ class DisappearTheBlocks(object):
         else:
             self.last_action = pyglet.clock.get_default().time()
 
+    @pause_protect
     def drop_piece(self):
         while self.valid():
             self.current_piece.y -= 1
@@ -236,11 +281,11 @@ class DisappearTheBlocksView(object):
 
         ax, ay = self.next_piece_anchor
         width = self.block_img.width
-        for (pos, index) in self.next_piece.blocks.iteritems():
+        for ((x,y), index) in self.next_piece.blocks.iteritems():
             sprite = pyglet.sprite.Sprite(self.block_img,
                                           batch=self.batch,
-                                          x=ax+pos[0]*width,
-                                          y=ay+pos[1]*width)
+                                          x=ax+x*width,
+                                          y=ay+y*width)
             sprite.color = pieces[index]['color']
             self.next_piece_blocks.append(sprite)
             
@@ -250,13 +295,8 @@ class DisappearTheBlocksView(object):
         self.next_piece = game.next_piece
         self.build_next_piece()
 
-    def update(self):
-        self.score.text = str(game.score)
-        self.level.text = str(game.level)
-        self.rows_cleared.text = str(game.rows_cleared)
-        self.update_next_piece()
-
-        state = game.state
+    def update_grid(self):
+        state = self.game.state
         s1 = set(self.last_state) 
         s2 = set(state)
         self.last_state = state
@@ -266,16 +306,23 @@ class DisappearTheBlocksView(object):
         delta = []
         delta.extend(zip(now_empty, repeat(-1)))
         delta.extend( ((pos, state[pos]) for pos in new_blocks) )
-        for (pos, index) in delta:
+        for ((x, y), index) in delta:
             # pieces can be outside the viewable area, so check for this
-            if pos[1] >= GRID_HEIGHT:
+            if y >= GRID_HEIGHT:
                 continue
-            sprite = self.block_grid[pos]
+            sprite = self.block_grid[(x,y)]
             if index == -1:
                 sprite.visible = False
             else:
                 sprite.visible = True
                 sprite.color = pieces[index]['color']
+
+    def update(self):
+        self.score.text = str(game.score)
+        self.level.text = str(game.level)
+        self.rows_cleared.text = str(game.rows_cleared)
+        self.update_next_piece()
+        self.update_grid()
 
     def draw(self):
         pyglet.gl.glColor3f(1.0, 1.0, 1.0)
@@ -286,11 +333,13 @@ class DisappearTheBlocksView(object):
 
 class DisappearTheBlocksKeyboardController(object):
 
-    def __init__(self, move_fn, rotate_fn, drop_fn):
+    def __init__(self, move_fn, rotate_fn, drop_fn, pause_fn, restart_fn):
         self.mapping = {MOVE_LEFT_KEY: lambda: move_fn(-1),
                         MOVE_RIGHT_KEY: lambda:move_fn(1),
                         ROTATE_CW_KEY: lambda: rotate_fn(1),
-                        DROP_KEY: lambda: drop_fn()}
+                        DROP_KEY: lambda: drop_fn(),
+                        PAUSE_KEY: lambda: pause_fn(),
+                        RESTART_KEY: lambda: restart_fn()}
 
     def on_key_press(self, symbol, modifiers):
         if symbol in self.mapping:
@@ -299,12 +348,13 @@ class DisappearTheBlocksKeyboardController(object):
 if __name__ == '__main__':
     window = pyglet.window.Window(800, 600)
     img = pyglet.image.load('block.png')
-    print 'loaded'
     game = DisappearTheBlocks()
     view = DisappearTheBlocksView(game, 400-125, 20, img)
     controller = DisappearTheBlocksKeyboardController(game.move_piece,
                                                       game.rotate_piece,
-                                                      game.drop_piece)
+                                                      game.drop_piece,
+                                                      game.toggle_pause,
+                                                      game.restart)
 
     @window.event
     def on_draw():
@@ -314,5 +364,4 @@ if __name__ == '__main__':
 
     window.push_handlers(controller)
     game.start()
-    print "running"
     pyglet.app.run()
