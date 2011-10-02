@@ -30,7 +30,7 @@ game_over_overlay_html = '''
 </center>
 '''
 
-
+# Utility functions
 def calc_tick_dt(level):
     """
     Calculates the fall velocity of pieces given a level
@@ -54,6 +54,7 @@ def input_protect(fn):
         return fn(self, *args, **kwargs)
     return safe
 
+# Game implementation
 class DisappearTheBlocks(object):
     """
     Implements a game of te... DisappearTheBlocks
