@@ -166,8 +166,8 @@ class DisappearTheBlocks(object):
     def finish_fall(self):
         self.blocks.update(self.current_piece.blocks)
         rows = self.make_consistent()
-        self.update_score(rows)
         self.update_level(rows)
+        self.update_score(rows)
         
         # if any part of the block is frozen outside the game board, that's game over
         if self.current_piece.y + self.current_piece.height >= GRID_HEIGHT:
