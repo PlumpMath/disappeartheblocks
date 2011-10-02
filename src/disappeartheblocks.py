@@ -48,19 +48,35 @@ def calc_points(level, rows):
 
     Not the Tetris scoring, but rather completely
     made up.
-    """ 
+    """
     return ((level+1)**2)*(rows**2)*10
 
-def game_active_only(fn):
+def game_action(fn):
     """
-    Decorator that allows a function to be run only if the
-    game is active (not paused or over).  The function is
-    assumed to be a member of a DisappearTheBlocks object.
+    Decorator that declares a function to be a game action.
+
+    The function is assumed to be a member of a DisappearTheBlocks
+    object.
+
+    A game action can only be performed when the game is active
+    (not paused or over).
+
+    Game actions should return True if they modify state
+    and False if they do not.
+
+    If a game action returns True, the self.last_action
+    variable will be updated with the current time.
+
+    If a game action returns False, no action is taken.
     """
     def safe(self, *args, **kwargs):
         if self.paused or self.over:
-            return
-        return fn(self, *args, **kwargs)
+            return False
+        ret = fn(self, *args, **kwargs)
+        if ret:
+            self.last_action = pyglet.clock.get_default().time()
+        return ret
+
     return safe
 
 # Game implementation
@@ -97,7 +113,7 @@ class DisappearTheBlocks(object):
             return
         self.paused = False
         pyglet.clock.schedule_interval(self.tick, calc_tick_dt(self.level))
-        
+
     def stop(self):
         self.paused = True
         pyglet.clock.unschedule(self.tick)
@@ -134,7 +150,7 @@ class DisappearTheBlocks(object):
 
     def update_score(self, rows):
         self.score += calc_points(self.level, rows)
-    
+
     def update_level(self, rows):
         self.rows_cleared += rows
         if self.level < self.rows_cleared//20:
@@ -174,7 +190,7 @@ class DisappearTheBlocks(object):
         rows = self.make_consistent()
         self.update_level(rows)
         self.update_score(rows)
-        
+
         # if any part of the block is frozen outside the game board, that's game over
         if self.current_piece.y + self.current_piece.height >= GRID_HEIGHT:
             self.over = True
@@ -193,30 +209,34 @@ class DisappearTheBlocks(object):
             if now - self.last_action > FREEZE_DELAY:
                 self.finish_fall()
 
-    @game_active_only
+    @game_action
     def move_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.x += direction
         if not self.valid():
             self.current_piece.x -= direction
-        else:
-            self.last_action = pyglet.clock.get_default().time()
+            return False
 
-    @game_active_only
+        return True
+
+    @game_action
     def rotate_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.rotate(direction)
         if not self.valid():
             if not self.wiggle_piece():
                 self.current_piece.rotate(-direction)
-                return
-        self.last_action = pyglet.clock.get_default().time()
+                return False
 
-    @game_active_only
+        return True
+
+    @game_action
     def drop_piece(self):
         while self.valid():
             self.current_piece.y -= 1
         self.current_piece.y += 1
+        return True
+
 
     def wiggle_piece(self):
         """
@@ -230,7 +250,7 @@ class DisappearTheBlocks(object):
             if self.valid():
                 return True
             self.current_piece.x -= d
-        
+
         return False
 
 class DisappearTheBlocksView(object):
