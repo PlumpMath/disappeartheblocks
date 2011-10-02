@@ -43,10 +43,11 @@ def calc_tick_dt(level):
 def calc_score(level, rows):
     return ((level+1)**2)*(rows**2)*10
 
-def input_protect(fn):
+def game_active_only(fn)
     """
-    Decorator that prevents a function from being run if the
-    game is paused or over.
+    Decorator that allows a function to be run only if the
+    game is active (not paused or over).  The function is
+    assumed to be a member of a DisappearTheBlocks object.
     """
     def safe(self, *args, **kwargs):
         if self.paused or self.over:
@@ -188,7 +189,7 @@ class DisappearTheBlocks(object):
             if now - self.last_action > FREEZE_DELAY:
                 self.finish_fall()
 
-    @input_protect
+    @game_active_only
     def move_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.x += direction
@@ -197,7 +198,7 @@ class DisappearTheBlocks(object):
         else:
             self.last_action = pyglet.clock.get_default().time()
 
-    @input_protect
+    @game_active_only
     def rotate_piece(self, direction):
         direction = 1 if direction > 0 else -1
         self.current_piece.rotate(direction)
@@ -207,7 +208,7 @@ class DisappearTheBlocks(object):
                 return
         self.last_action = pyglet.clock.get_default().time()
 
-    @input_protect
+    @game_active_only
     def drop_piece(self):
         while self.valid():
             self.current_piece.y -= 1
