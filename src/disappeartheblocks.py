@@ -40,7 +40,14 @@ def calc_tick_dt(level):
         time = .05
     return time
 
-def calc_score(level, rows):
+def calc_points(level, rows):
+    """
+    Calculates the points that are gained when
+    `rows` are cleared on `level`.
+
+    Not the Tetris scoring, but rather completely
+    made up.
+    """ 
     return ((level+1)**2)*(rows**2)*10
 
 def game_active_only(fn)
@@ -62,7 +69,7 @@ class DisappearTheBlocks(object):
     """
     blocks = {}
     last_action = 0 # time of last action
-    _score = 0
+    score = 0
     level = 0
     rows_cleared = 0
     paused = True
@@ -72,10 +79,6 @@ class DisappearTheBlocks(object):
         self.current_piece = random_piece(GRID_WIDTH//2,
                                           GRID_HEIGHT + 1)
         self.next_piece = random_piece(0,0)
-
-    @property
-    def score(self):
-        return self._score
 
     @property
     def state(self):
@@ -129,7 +132,7 @@ class DisappearTheBlocks(object):
         return not (set(self.current_piece.blocks).intersection(set(self.blocks)))
 
     def update_score(self, rows):
-        self._score += calc_score(self.level, rows)
+        self.score += calc_points(self.level, rows)
     
     def update_level(self, rows):
         self.rows_cleared += rows
