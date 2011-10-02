@@ -219,8 +219,10 @@ class DisappearTheBlocks(object):
 
     def wiggle_piece(self):
         """
-        If a rotation isn't successful, try to wiggle it around
-        a bit to make it fit
+        If a rotation isn't successful, try to make it fit by moving
+        it left and right.
+
+        Returns true if the piece was made to fit, false if it didn't.
         """
         for d in [-1, 1, -2, -3]:
             self.current_piece.x += d
