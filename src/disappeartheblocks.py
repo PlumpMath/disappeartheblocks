@@ -33,7 +33,8 @@ game_over_overlay_html = '''
 # Utility functions
 def calc_tick_dt(level):
     """
-    Calculates the fall velocity of pieces given a level
+    Calculates the time between game ticks for a given
+    level.
     """
     time = 0.5 - level*.06
     if time < .05:
@@ -50,7 +51,7 @@ def calc_points(level, rows):
     """ 
     return ((level+1)**2)*(rows**2)*10
 
-def game_active_only(fn)
+def game_active_only(fn):
     """
     Decorator that allows a function to be run only if the
     game is active (not paused or over).  The function is
